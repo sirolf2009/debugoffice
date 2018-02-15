@@ -1,18 +1,22 @@
 package com.sirolf2009.debugoffice
 
+import com.sun.star.beans.XPropertySet
 import com.sun.star.frame.XComponentLoader
 import com.sun.star.sheet.XSpreadsheet
 import com.sun.star.sheet.XSpreadsheetDocument
 import com.sun.star.table.XCell
 import com.sun.star.uno.UnoRuntime
 import com.sun.star.uno.XComponentContext
-import ooo.connector.BootstrapSocketConnector
-import com.sun.star.beans.XPropertySet
+import com.sun.star.util.XCloseable
 import java.io.Closeable
 import java.io.IOException
-import com.sun.star.util.XCloseable
+import java.util.function.Function
+import ooo.connector.BootstrapSocketConnector
+import java.io.File
 
 class Spreadsheet implements Closeable {
+	
+	static val Function<XComponentLoader, XSpreadsheetDocument> NEW_FILE = [UnoRuntime.queryInterface(XSpreadsheetDocument, loadComponentFromURL("private:factory/scalc", "_blank", 0, #[]))]
 	
 	val XComponentContext context
 	val XComponentLoader loader
@@ -20,10 +24,18 @@ class Spreadsheet implements Closeable {
 	val XSpreadsheet spreadsheet
 	
 	new(String oooInstallationFolder) {
+		this(oooInstallationFolder, NEW_FILE)
+	}
+	
+	new(String oooInstallationFolder, File file) {
+		this(oooInstallationFolder, OpenFile(file))
+	}
+	
+	new(String oooInstallationFolder, Function<XComponentLoader, XSpreadsheetDocument> spreadsheetLoader) {
 		context = BootstrapSocketConnector.bootstrap(oooInstallationFolder)
 		val desktop = context.serviceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
 		loader = UnoRuntime.queryInterface(XComponentLoader, desktop)
-		spreadsheetDocument = UnoRuntime.queryInterface(XSpreadsheetDocument, loader.loadComponentFromURL("private:factory/scalc", "_blank", 0, #[]))
+		spreadsheetDocument = spreadsheetLoader.apply(loader)
 		spreadsheet = UnoRuntime.queryInterface(XSpreadsheet, spreadsheetDocument.sheets.getByName("Sheet1"))
 	}
 	
@@ -58,6 +70,17 @@ class Spreadsheet implements Closeable {
 	override close() throws IOException {
 		val closable = UnoRuntime.queryInterface(XCloseable, spreadsheetDocument) as XCloseable
 		closable.close(false)
+	}
+	
+	def static OpenFile(String file) {
+		return OpenFile(new File(file))
+	}
+	
+	def static Function<XComponentLoader, XSpreadsheetDocument> OpenFile(File file) {
+		val path = file.toURI().getRawPath() 
+        val url = if(path.startsWith("//")) "file:" + path else "file://" + path 
+        val urlClean = if(url.endsWith("/")) url.substring(0, url.length() - 1) else url 
+		return [UnoRuntime.queryInterface(XSpreadsheetDocument, loadComponentFromURL(urlClean, "_blank", 0, #[]))]
 	}
 	
 }
